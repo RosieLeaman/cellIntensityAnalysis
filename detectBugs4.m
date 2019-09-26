@@ -1,82 +1,53 @@
-% Rosie edit of detectBugs2.m to modernise this and bring it up to date with modern matlab
-% functions
-% further modernisations of detectBugs3.m
+% updated version of detectBugs developed by Stephen Cross.
 
-% the final measureBugProfile has not been completely fixed!!!!
-
-%This is the main executing script for the bug detection tool.  For a
-%folder of images (all taken from the same microscope at the same settings)
-%a background image will be calculated (by averaging the images) and used
-%to clean up the images, so they can be thresholded and individual cells
-%identified.  These identified cells are measured, then the data is stored
-%in an Excel file.
+% main file. Binarises each image, identifies cells based on an intensity
+% and pixel size threshold and then crops each cell out and returns the
+% cropped cell image and the length of the cell
 
 % INPUTS
-
-% a filepath to an image file (preferably a .tif)
+% filename; a full filepath to a tiff image file
 
 % OUTPUTS
-
-% a 3x3 matrix of data about the cells in the image 
-% first index is the data type
-% second index is the data contents
-% third index is the index of the cell the data is for
-
-% the data available is:
-% 1
-% 2 normalised x positions along long axis
-% 3
-% 4 normalised fluorescence intensity at normalised x positions along long
-% axis
+% lengths; 1xC vector, length of each cell
+% images; 1xC cell array, cropped image of each cell
+% imageMasks; 1xC cell array, masks of each cell region in the cropped image
+% imageNames; 1xC cell array, the name of the image file for each cell
 
 function [lengths,images,imageMasks,imageNames] = detectBugs4(filename)
 
-%% SETTING INITIAL PARAMETERS
-
 min_px_in_bug = 300; %The minimum number of pixels per detected cell, which
 %should remove the majority of background noise
-
 max_px_in_bug = 800; %The maximum area a detected cell can take, it
 %should remove any large "blobs" of dirt on the sample, or groups of cells
 
-%% INTIIAL SETUP
-
-curr_num = 0; %The current number in the set is initially set to
-%the first image number
-
-%% MAIN EXECUTION
-disp ([filename,num2str(curr_num)]); %Displaying the current image
+disp (filename); %Displaying the current image file being worked on
 
 %Loading the current image to "loaded_im"
 image = tiffread(filename);
 loaded_im = image.data();
 
 % show the original image
-%disp(['max: ',num2str(max(loaded_im(:))),' min: ',num2str(min(loaded_im(:)))]);
 figure;imshow(loaded_im,[min(loaded_im(:)) max(loaded_im(:))]);title('original')
 original_im = loaded_im; % save the original image for later
 
 % we want to threshold the image. The images are close to background, and
 % the default threshold fails. So we calculate our own threshold as the avg
-% + 3sd.
+% + N*s.d. for some N
 
 avg = mean(loaded_im(:)); % calculate avg intensity
 
 sd = std(double(loaded_im(:))); % SD of intensity (double cause type issues)
 
 %thresh = (double(avg)+2.5*double(sd))/double(2^32); % threshold
-
-thresh = (double(avg)+2*double(sd))/double(2^32); % threshold
+%thresh = (double(avg)+2*double(sd))/double(2^32); % threshold
 
 thresh = (double(avg)+4*double(sd))/double(2^16); % threshold
 
+% binarise the image
 filtered_im = imbinarize(loaded_im,thresh);
-
 filtered_im = imfill(filtered_im,'holes'); % deal a bit with speckly cells
 
 figure;imshow(filtered_im)
-
-%disp(['max: ',num2str(max(filtered_im(:))),' min: ',num2str(min(filtered_im(:)))]);
 
 % identify individual cells by finding connected components in the
 % filtered_im
@@ -92,52 +63,14 @@ for i=1:length(clusters.PixelIdxList)
 end
 
 % find clusters again now we may have removed some
-
 clusters = bwconncomp(filtered_im);
 
-% test doing a bounding box
-
+% identify information about each region
 s = regionprops(clusters,'BoundingBox','MajorAxisLength','MinorAxisLength','Orientation','Area','PixelList','Extrema','Centroid');
-numBugs = numel(s);
 
 % extrema [top-left top-right right-top right-bottom bottom-right bottom-left left-bottom left-top]
 
-% now the code records a lot of information about the bugs
-% the information required is: bug label (cluster), top, bottom, right,
-% left (these are the extreme pixel values in the bug in these directions,
-% not the locations of the bounding box coords, and I think are dispensable now), 
-% long axis length, short axis length
-
-[bug_info_table] = zeros(numBugs,11);
-
-% set all the columns of this now
-
-for i=1:numBugs
-    bug_info_table(i,1) = i; % first entry is bug id number
-    bug_info_table(i,2) = s(i).Extrema(2,2); % top 
-    bug_info_table(i,3) = s(i).Extrema(6,2); % bottom
-    bug_info_table(i,4) = s(i).Extrema(2,1); % right
-    bug_info_table(i,5) = s(i).Extrema(6,1); % left
-    bug_info_table(i,6) = s(i).MajorAxisLength; % length long axis bug
-    bug_info_table(i,7) = s(i).MinorAxisLength; % length short axis bug
-    bug_info_table(i,6) = s(i).MajorAxisLength; % length long axis bug
-    bug_info_table(i,8) = s(i).Orientation; % angle between x axis and long axis of bug
-    bug_info_table(i,9) = i; % old bug ID number (currently same)
-    
-    % calculate the total intensity in the bug
-    totalIntensity = 0;
-    for j=1:numel(clusters.PixelIdxList{i})
-        totalIntensity = totalIntensity + sum(original_im(clusters.PixelIdxList{i}(j)));
-    end
-    
-    bug_info_table(i,10) = totalIntensity;
-
-end
-
-% display the chosen bugs with boxes around them and text
-
-%[disp_fig] = displayBugs2(original_im, bug_info_table);
-numAnalysedBugs = size(bug_info_table,1);
+numAnalysedBugs = numel(s);
 
 fig = figure;
 hold on;
@@ -149,8 +82,7 @@ for k = 1:numAnalysedBugs
     disp(['Num bug: ',num2str(k),' Long axis: ',num2str(s(k).MajorAxisLength),' Short axis: ',num2str(s(k).MinorAxisLength)])
 end
 
-
-%Setting the previously generated figure to the screen size, then
+%This cade saves the analysed bug image if desired
 %saving it with the suffix "analysedBugs"
 %set(disp_fig,'position',screen_size);
 
@@ -159,16 +91,8 @@ end
 
 %close(fig)
 
-% first crop the image to an image for each cell
-
-% images = cell(numAnalysedBugs,1);
-% imageMasks = cell(numAnalysedBugs,1);
-% points = zeros(100,100);
-% lengths = zeros(numAnalysedBugs,1);
-% peaks = zeros(1,numAnalysedBugs);
-% 
-% imageNames = cell(numAnalysedBugs,1);
-
+% we do not preallocate size as some cells may be ignored and there are
+% too few cells per image to make it worthwhile memory-wise
 images = {};
 imageMasks = {};
 %points = zeros(100,100);
@@ -177,13 +101,11 @@ lengths = [];
 
 imageNames = cell(1);
 
+% do the analysis of each cell. The peak finding code is currently
+% commented out.
+
 index = 1;
 for k=1:numAnalysedBugs
-    
-%     figure;imshow(loaded_im,[min(loaded_im(:)),max(loaded_im(:))]);
-%     hold on;
-%     rectangle('Position', s(k).BoundingBox,'EdgeColor','r', 'LineWidth', 1)
-%     plot(s(k).Centroid(1),s(k).Centroid(2),'rx');
     
     % NEW APPROACH
     % first rotate the image by the theta that will make this cell vertical
@@ -223,15 +145,10 @@ for k=1:numAnalysedBugs
     % now we find the connected components
     sTemp = findBugsInImage(rotImMask,min_px_in_bug,max_px_in_bug);
     
-    %figure; 
-    %imshow(rotIm,[min(loaded_im(:)),max(loaded_im(:))]);
-    %hold on; % this has to go AFTER imshow
-    
     rightBug = 0;
     
     for bug = 1:numel(sTemp)
         if abs(sTemp(bug).Centroid(1) - newCentroid(1)) < 2 && abs(sTemp(bug).Centroid(2) - newCentroid(2)) < 2
-            %plot(sTemp(bug).Centroid(1),sTemp(bug).Centroid(2),'rx');
             rightBug = bug;
             break
         end
@@ -250,9 +167,6 @@ for k=1:numAnalysedBugs
 
         lengths(index) = sTemp(rightBug).MajorAxisLength;
 
-        % add 3 pixels either side as a little buffer
-        %recty = [newTop(1)-3,newTop(2)-3,width+6,long+6];
-
         % crop out the cell
         % have to rotate first or get bad edges
         images{index} = imcrop(rotIm,box);
@@ -269,6 +183,8 @@ for k=1:numAnalysedBugs
         plot(newCentroid(1),size(rotIm,1)-newCentroid(2),'ro')
         title('failed')
     end
+    
+    % PEAK FINDING CODE
     
     %figure;imshow(images{k},[min(images{k}(:)),max(images{k}(:))]);
     

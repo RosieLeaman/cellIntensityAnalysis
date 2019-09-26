@@ -1,4 +1,6 @@
-% this goes round a folder and runs detectBugs4 on it.
+% this goes round a folder and runs detectBugs4 on it. The results are then
+% ordered by cell size across all cells and the average cell intensity
+% distributions are plotted.
 
 function [allAverageIntensity,rounded] = detectBugs4Folder(folder,saveFolder)
 
@@ -52,7 +54,7 @@ for i=1:numel(altLengths)
     altLengths(i) = size(unsortedImageList{i},1);
 end
 
-[sortedLengths,sortedLengthIndices] = sort(altLengths);
+[~,sortedLengthIndices] = sort(altLengths);
 imageList = unsortedImageList(sortedLengthIndices);
 imageMaskList = unsortedImageMaskList(sortedLengthIndices);
 imageNameList = unsortedImageNameList(sortedLengthIndices);
@@ -98,7 +100,11 @@ for i=1:numel(imageList)
     
 end
 
+% save the results so the whole image analysis does not have to be redone
+% every time to change the plots
 save([saveFolder,'/results.mat'])
+
+% here the plotting occurs
 
 % double check that there are no sketchy zeros
 allAverageIntensity(allAverageIntensity == 0) = NaN;
@@ -144,7 +150,7 @@ set(gca,'Fontsize',16)
 xticklabels({''})
 yticklabels({''})
 
-% find the peaky bois
+% peak finding code
 
 countPeaks = zeros(numel(imageList),1);
 
